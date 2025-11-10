@@ -1,320 +1,134 @@
 import { useEffect, useState } from "react";
-import { initializeApp } from "firebase/app";
-import {
-  getDatabase,
-  ref,
-  push,
-  query,
-  orderByChild,
-  equalTo,
-  get,
-  onValue
-} from "firebase/database";
-
-/**
- * CONFIG - replace these values with your actual Firebase project values if needed.
- * I used the project values you shared earlier. If you changed them, update here.
- */
-const firebaseConfig = {
-  apiKey: "AIzaSyDN-ScdvciBaT-kiz5vsi0v3cOONXMFLDM",
-  authDomain: "humbletreasuretech.firebaseapp.com",
-  databaseURL: "https://humbletreasuretech-default-rtdb.firebaseio.com",
-  projectId: "humbletreasuretech",
-  storageBucket: "humbletreasuretech.firebasestorage.app",
-  messagingSenderId: "943679922790",
-  appId: "1:943679922790:web:c70a1540268e06038fc3a7",
-  measurementId: "G-F28S21HC2R",
-};
-
-// Initialize Firebase client (safe init)
-let fbApp;
-try {
-  fbApp = initializeApp(firebaseConfig);
-} catch (e) {
-  // if already initialized in HMR dev re-load, ignore
-  // console.warn("Firebase init:", e.message);
-}
-const db = getDatabase(fbApp);
-
-// UI constants
-const TARGET_QUANTA = 1000; // your target number (1000 by default)
-const COUNTRY_CODES = [
-  "+234",
-  "+1",
-  "+44",
-  "+91",
-  "+86",
-  "+234 (Nigeria)",
-  "+233 (Ghana)",
-  "+250 (Rwanda)",
-  "+27 (South Africa)"
-]; // extend as you like
 
 export default function Home() {
-  const [fullName, setFullName] = useState("");
-  const [countryCode, setCountryCode] = useState("+234");
-  const [localNumber, setLocalNumber] = useState("");
-  const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [currentContacts, setCurrentContacts] = useState(0);
 
-  const [totalCount, setTotalCount] = useState(0);
-  const [progressRatio, setProgressRatio] = useState(0);
-
-  // Listen for live total count update
   useEffect(() => {
-    const contactsRef = ref(db, "contacts");
-    const unsubscribe = onValue(contactsRef, (snap) => {
-      const val = snap.val();
-      const count = val ? Object.keys(val).length : 0;
-      setTotalCount(count);
-      setProgressRatio(Math.min(1, count / TARGET_QUANTA));
-    });
-
-    return () => unsubscribe();
+    fetchCurrentContacts();
+    window.addEventListener('resize', resizeCanvas);
+    createStars();
+    animateStars();
+    return () => window.removeEventListener('resize', resizeCanvas);
   }, []);
 
-  function formatPhone(code, num) {
-    // basic normalization: remove non-digit except leading +
-    const digits = num.replace(/[^\d]/g, "");
-    if (code && code.startsWith("+")) {
-      // remove + from local if user included
-      return code + digits;
-    }
-    return digits;
-  }
-
-  async function checkDuplicate(phone) {
-    // Query by child phoneNumber == phone
+  const fetchCurrentContacts = async () => {
     try {
-      const q = query(ref(db, "contacts"), orderByChild("phoneNumber"), equalTo(phone));
-      const snapshot = await get(q);
-      return snapshot.exists();
+      const res = await fetch('/api/current');
+      const data = await res.json();
+      setCurrentContacts(data.count || 0);
     } catch (err) {
-      console.error("Duplicate check error:", err);
-      return false; // be permissive if check fails, but we log
+      console.error(err);
     }
-  }
+  };
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setStatus("");
-    if (!fullName.trim() || !localNumber.trim()) {
-      setStatus("Please enter name and phone number.");
-      return;
-    }
+  // Stars canvas
+  let stars = [];
+  let canvas, ctx;
 
-    const phone = formatPhone(countryCode, localNumber);
-    if (phone.length < 7) {
-      setStatus("Phone number looks too short. Check digits.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const isDup = await checkDuplicate(phone);
-      if (isDup) {
-        setStatus("❌ Duplicate number — this contact already exists.");
-        setLoading(false);
-        return;
-      }
-
-      // Save to Firebase realtime DB under "contacts"
-      await push(ref(db, "contacts"), {
-        fullName: fullName.trim(),
-        phoneNumber: phone,
-        createdAt: Date.now()
+  const createStars = () => {
+    canvas = document.getElementById('stars');
+    ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    stars = [];
+    for (let i = 0; i < 100; i++) {
+      stars.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: Math.random() * 2,
+        speed: Math.random() * 0.5 + 0.2,
       });
-
-      setStatus("✅ Contact saved. Thank you!");
-      setFullName("");
-      setLocalNumber("");
-      // UI will update total via onValue listener
-    } catch (err) {
-      console.error("Save contact error:", err);
-      setStatus("❌ Server error while saving. Try again.");
     }
+  };
 
-    setLoading(false);
-  }
+  const animateStars = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "white";
+    for (let s of stars) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+      ctx.fill();
+      s.y += s.speed;
+      if (s.y > canvas.height) s.y = 0;
+    }
+    requestAnimationFrame(animateStars);
+  };
 
-  // Compute numeric display, percent
-  const percent = Math.floor(progressRatio * 100);
-  const displayTotal = `${totalCount} / ${TARGET_QUANTA}`;
+  const resizeCanvas = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    createStars();
+  };
+
+  const handleUpload = async () => {
+    const name = document.getElementById("name").value.trim();
+    const phone = document.getElementById("phone").value.trim();
+    const code = document.getElementById("countryCode").value;
+
+    if (!name || !phone) return alert("Please fill all fields!");
+
+    const btn = document.getElementById("uploadBtn");
+    btn.innerText = "Uploading...";
+    btn.disabled = true;
+
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, phone: code + phone }),
+      });
+      if (res.ok) {
+        btn.innerText = "Uploaded ✅ Redirecting...";
+        setTimeout(() => {
+          window.location.href = "https://chat.whatsapp.com/Lrdun6oXkLt5vogYUhLyaq?mode=wwt";
+        }, 1500);
+      } else throw new Error("Failed to upload");
+    } catch (err) {
+      console.error(err);
+      alert("Error uploading contact.");
+      btn.innerText = "Upload Contact";
+      btn.disabled = false;
+    }
+  };
+
+  const handleChannel = () => {
+    window.open("https://whatsapp.com/channel/0029VbBP68M9Bb64yG0yfI1H", "_blank");
+  };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <h1 style={styles.title}>JUST BETTING 💯 — Contact Gain</h1>
-        <p style={styles.subtitle}>
-          Join the list. We keep it clean — duplicates not allowed. Your number will be stored in our
-          contact center.
+    <div style={{ position: "relative", textAlign: "center" }}>
+      <canvas id="stars" style={{ position: "absolute", top:0, left:0, width:"100%", height:"100%", zIndex:0 }}></canvas>
+      <div className="container" style={{
+        position: "relative", zIndex:2, background:"rgba(255,255,255,0.05)", padding:"2rem",
+        borderRadius:"20px", boxShadow:"0 0 25px rgba(0,100,255,0.4)", maxWidth:"400px", margin:"0 auto", marginTop:"5vh"
+      }}>
+        <h1 style={{color:"#3b82f6"}}>Humble Treasure VCF</h1>
+        <p>Boost your WhatsApp status with <b>Humble Treasure VCF</b>. Upload your name and WhatsApp number, then join our community.</p>
+        <p>👥 Current Contacts: <span id="currentContacts">{currentContacts}</span><br/>
+           🎯 Target Contacts: <b>1000</b>
         </p>
-
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <input
-            style={styles.input}
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="Full name"
-            required
-          />
-
-          <div style={styles.row}>
-            <select
-              style={{ ...styles.input, width: "36%" }}
-              value={countryCode}
-              onChange={(e) => setCountryCode(e.target.value)}
-            >
-              {COUNTRY_CODES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
+        <div className="form-group text-start">
+          <label>Full Name</label>
+          <input type="text" id="name" className="form-control" placeholder="Enter your name"/>
+        </div>
+        <div className="form-group text-start">
+          <label>Phone Number</label>
+          <div className="d-flex">
+            <select id="countryCode" className="form-select" style={{maxWidth:"100px"}}>
+              <option value="+234">🇳🇬 +234 Nigeria</option>
+              <option value="+1">🇺🇸 +1 USA</option>
+              <option value="+44">🇬🇧 +44 UK</option>
+              {/* Add more as needed */}
             </select>
-
-            <input
-              style={{ ...styles.input, width: "64%" }}
-              value={localNumber}
-              onChange={(e) => setLocalNumber(e.target.value)}
-              placeholder="Phone number (no spaces)"
-              required
-            />
-          </div>
-
-          <button style={styles.button} type="submit" disabled={loading}>
-            {loading ? "Saving..." : "Submit Contact"}
-          </button>
-        </form>
-
-        {status && <div style={styles.status}>{status}</div>}
-
-        <div style={{ marginTop: 18 }}>
-          <div style={styles.progressHeader}>
-            <div style={{ fontWeight: 700 }}>{displayTotal}</div>
-            <div style={{ fontSize: 13, color: "#666" }}>{percent}%</div>
-          </div>
-
-          <div style={styles.progressTrack}>
-            <div
-              style={{
-                ...styles.progressFill,
-                width: `${Math.max(2, percent)}%` // ensure small fill visible even for 0
-              }}
-            />
-          </div>
-
-          <div style={styles.progressNote}>
-            Current rate: <strong>{percent}%</strong> — target <strong>{TARGET_QUANTA}</strong>
+            <input type="tel" id="phone" className="form-control ms-2" placeholder="WhatsApp number"/>
           </div>
         </div>
-
-        <div style={{ textAlign: "center", marginTop: 18 }}>
-          <a
-            href="/api/download?key=humble123"
-            style={styles.downloadLink}
-            onClick={() => {
-              /* optional: nothing, link triggers download */
-            }}
-          >
-            Download VCF
-          </a>
-        </div>
+        <button id="uploadBtn" className="btn btn-primary w-100" onClick={handleUpload}>Upload Contact</button>
+        <button id="channelBtn" className="btn btn-success w-100 mt-2" onClick={handleChannel}>Follow Our Channel</button>
+      </div>
+      <div className="footer" style={{position:"fixed", bottom:"10px", fontSize:"0.9rem", color:"#fff"}}>
+        ⚡ Powered by <b>Humble Treasure Tech</b>
       </div>
     </div>
-  );
+  )
 }
-
-// Basic inline styles to keep everything in one file. Replace with your CSS if you like.
-const styles = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background:
-      "linear-gradient(180deg, rgba(250,250,252,1) 0%, rgba(241,246,255,1) 100%)",
-    padding: 20
-  },
-  card: {
-    width: "100%",
-    maxWidth: 680,
-    background: "#fff",
-    borderRadius: 12,
-    padding: 24,
-    boxShadow: "0 6px 30px rgba(30,40,70,0.08)"
-  },
-  title: {
-    margin: 0,
-    fontSize: 22,
-    textAlign: "center"
-  },
-  subtitle: {
-    textAlign: "center",
-    color: "#556",
-    marginTop: 6,
-    marginBottom: 18
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 12
-  },
-  input: {
-    padding: 12,
-    fontSize: 15,
-    borderRadius: 8,
-    border: "1px solid #e6e9ef",
-    outline: "none"
-  },
-  row: { display: "flex", gap: 10 },
-  button: {
-    padding: 12,
-    background: "linear-gradient(90deg,#06b6d4,#3b82f6)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    fontWeight: 700,
-    cursor: "pointer"
-  },
-  status: {
-    marginTop: 10,
-    padding: 10,
-    background: "#fff3cd",
-    borderRadius: 8,
-    color: "#856404",
-    border: "1px solid #ffeeba"
-  },
-  progressHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center"
-  },
-  progressTrack: {
-    width: "100%",
-    height: 12,
-    background: "#eef2ff",
-    borderRadius: 999,
-    overflow: "hidden",
-    marginTop: 8
-  },
-  progressFill: {
-    height: "100%",
-    background: "linear-gradient(90deg,#60a5fa,#34d399)",
-    borderRadius: 999,
-    transition: "width 400ms ease"
-  },
-  progressNote: {
-    marginTop: 8,
-    color: "#444",
-    fontSize: 13
-  },
-  downloadLink: {
-    display: "inline-block",
-    padding: "10px 18px",
-    background: "#111827",
-    color: "#fff",
-    borderRadius: 8,
-    textDecoration: "none"
-  }
-};
