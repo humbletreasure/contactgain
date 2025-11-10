@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 export default function Home() {
+  const TARGET_CONTACTS = 1000; // you can change this anytime
   const [currentContacts, setCurrentContacts] = useState(0);
 
   useEffect(() => {
@@ -82,10 +83,14 @@ export default function Home() {
         setTimeout(() => {
           window.location.href = "https://chat.whatsapp.com/Lrdun6oXkLt5vogYUhLyaq?mode=wwt";
         }, 1500);
-      } else throw new Error("Failed to upload");
+        fetchCurrentContacts(); // refresh contacts
+      } else {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to upload");
+      }
     } catch (err) {
       console.error(err);
-      alert("Error uploading contact.");
+      alert(err.message || "Error uploading contact.");
       btn.innerText = "Upload Contact";
       btn.disabled = false;
     }
@@ -94,6 +99,8 @@ export default function Home() {
   const handleChannel = () => {
     window.open("https://whatsapp.com/channel/0029VbBP68M9Bb64yG0yfI1H", "_blank");
   };
+
+  const progressPercentage = Math.min(100, (currentContacts / TARGET_CONTACTS) * 100);
 
   return (
     <div style={{ position: "relative", textAlign: "center" }}>
@@ -105,8 +112,20 @@ export default function Home() {
         <h1 style={{color:"#3b82f6"}}>Humble Treasure VCF</h1>
         <p>Boost your WhatsApp status with <b>Humble Treasure VCF</b>. Upload your name and WhatsApp number, then join our community.</p>
         <p>👥 Current Contacts: <span id="currentContacts">{currentContacts}</span><br/>
-           🎯 Target Contacts: <b>1000</b>
+           🎯 Target Contacts: <b>{TARGET_CONTACTS}</b>
         </p>
+
+        {/* Progress Bar */}
+        <div style={{background:"#333", borderRadius:"10px", height:"15px", marginBottom:"1rem"}}>
+          <div style={{
+            width:`${progressPercentage}%`,
+            background:"#3b82f6",
+            height:"100%",
+            borderRadius:"10px",
+            transition:"width 0.5s ease-in-out"
+          }}></div>
+        </div>
+
         <div className="form-group text-start">
           <label>Full Name</label>
           <input type="text" id="name" className="form-control" placeholder="Enter your name"/>
